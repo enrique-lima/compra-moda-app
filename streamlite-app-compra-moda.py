@@ -90,15 +90,22 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-if uploaded_file:
-    with st.spinner("Carregando dados e normalizando..."):
-        df_venda, df_estoque = carregar_dados(uploaded_file)
+f uploaded_file:
+    progresso = st.progress(0)
+    status_text = st.empty()
 
+    status_text.text("1/3 - Lendo arquivo Excel...")
+    df_venda, df_estoque = carregar_dados(uploaded_file)
+    progresso.progress(33)
+
+    status_text.text("2/3 - Normalizando e preparando dados...")
     meses = {"janeiro":1,"fevereiro":2,"marco":3,"abril":4,"maio":5,"junho":6,"julho":7,"agosto":8,"setembro":9,"outubro":10,"novembro":11,"dezembro":12}
     df_venda["mes_num"] = df_venda["mes_venda"].str.lower().map(meses)
     df_venda = df_venda.dropna(subset=["ano_venda", "mes_num"])
     df_venda["ano_mes"] = pd.to_datetime(df_venda["ano_venda"].astype(int).astype(str) + "-" + df_venda["mes_num"].astype(int).astype(str) + "-01")
+    progresso.progress(66)
 
+    status_text.text("3/3 - Gerando forecast e recomendações...")
     peso_google_trends = st.sidebar.slider("Peso do ajuste Google Trends (%)", 0, 100, 100, 5) / 100
     usar_sazonalidade = st.sidebar.checkbox("Considerar sazonalidade (verão, inverno, etc)", value=True)
 
@@ -133,7 +140,7 @@ if uploaded_file:
 
         resultado.append(registro)
 
-    df_resultado = pd.DataFrame(resultado)
+    progresso.progress(100)
 
     st.success("Previsão gerada com sucesso!")
 
