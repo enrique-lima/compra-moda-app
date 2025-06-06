@@ -2,6 +2,16 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 import plotly.express as px
+from PIL import Image
+import os
+
+# Tente abrir a imagem do logo de forma segura
+logo_path = "LOGO_TL.png"
+if os.path.exists(logo_path):
+    logo_image = Image.open(logo_path)
+    st.image(logo_image, width=150)
+else:
+    st.warning("Logo não encontrado. Por favor, confirme se o arquivo LOGO_TL.png está na pasta do app.")
 
 # === Estilização via CSS ===
 st.markdown("""
@@ -27,7 +37,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # === Título e descrição ===
-st.image("LOGO_TL.png", width=150)
 st.title("Previsão de Vendas e Reposição de Estoque")
 st.write("""
 Este app permite fazer previsão de vendas por linha OTB e cor de produto, com sugestão de estoque com base na tendência do Google Trends e histórico de vendas.
