@@ -17,7 +17,8 @@ def carregar_dados(uploaded_file):
     df_estoque = normalizar_colunas(xls.parse("ESTOQUE"))
     return df_venda, df_estoque
 
-# Função normalizar colunas (sem cache pois é leve)
+# Função normalizar colunas
+
 def normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [
         unicodedata.normalize("NFKD", c).encode("ASCII", "ignore").decode("utf-8").strip().lower().replace(" ", "_")
@@ -25,33 +26,52 @@ def normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
     ]
     return df
 
-# --- CACHE para Google Trends ---
+# --- CACHE para Google Trends (inclui concorrentes) ---
 @st.cache_data(show_spinner=False, max_entries=32, ttl=3600*6)
-def get_trend_uplift(linhas_otb: tuple[str]) -> dict[str, float]:
+def get_trend_uplift(linhas_otb: tuple[str]) -> tuple[dict[str, float], pd.DataFrame]:
     linhas_otb = list(linhas_otb)
     pytrends = TrendReq(hl="pt-BR", tz=360)
+
     genericos = [
         "acessorios","alpargata","anabela","mocassim","bolsa","bota","cinto","loafer","rasteira",
         "sandalia","sapatilha","scarpin","tenis","meia","meia pata","salto","salto fino",
         "salto normal","sapato tratorado","mule","oxford","papete","peep flat","slide",
+        "sandália spike","salto spike","papete spike"
     ]
-    tendencias: dict[str,float] = {}
+
+    concorrentes = [
+        "alexander birman", "schutz", "arezzo", "luiza barcelos", "sidewalk"
+    ]
+
+    tendencias: dict[str, float] = {}
+    registros = []
+
     for linha in linhas_otb:
         try:
-            termos = [linha.lower()] + genericos
+            termos = [linha.lower()] + genericos + concorrentes
             pytrends.build_payload(termos, timeframe="today 3-m", geo="BR")
             df_trend = pytrends.interest_over_time()
             if not df_trend.empty:
-                base = df_trend.get(linha.lower(), pd.Series(index=df_trend.index, data=0)).mean()
-                generico = df_trend[genericos].mean(axis=1).mean()
-                uplift = ((base + generico) / 2 - 50) / 100
+                base_score = df_trend.get(linha.lower(), pd.Series(index=df_trend.index, data=0)).mean()
+                generico_score = df_trend[genericos].mean(axis=1).mean()
+                concorrente_score = df_trend[concorrentes].mean(axis=1).mean()
+                media_geral = (base_score + generico_score + concorrente_score) / 3
+                uplift = (media_geral - 50) / 100
             else:
-                uplift = 0
+                base_score = generico_score = concorrente_score = uplift = 0
         except Exception:
-            uplift = 0
+            base_score = generico_score = concorrente_score = uplift = 0
         tendencias[linha] = round(uplift, 3)
+        registros.append({
+            "linha_otb": linha,
+            "score_linha": round(base_score, 2),
+            "score_generico": round(generico_score, 2),
+            "score_concorrente": round(concorrente_score, 2),
+            "uplift_aplicado": round(uplift, 3)
+        })
         time.sleep(1)
-    return tendencias
+
+    return tendencias, pd.DataFrame(registros)
 
 # --- CACHE para forecast de séries ---
 @st.cache_data(show_spinner=False, max_entries=128)
@@ -70,11 +90,11 @@ def forecast_serie_cache(serie_values: tuple, serie_index: tuple, passos: int, s
         )
     return prev.clip(lower=0)
 
-# --- App ---
+# --- App Interface ---
 st.image("https://raw.githubusercontent.com/enrique-lima/compra-moda-app/main/LOGO_TL.png", width=300)
 st.title("Previsão de Vendas e Reposição de Estoque")
 st.markdown("""
-Este app realiza forecast de vendas e recomendações de compra , com análise por Filial, Linha OTB e Cor. Utiliza dados históricos, estoque e tendências de mercado (Google Trends) para prever os próximos 6 meses e apoiar decisões estratégicas.
+Este app realiza forecast de vendas e recomendações de compra, com análise por Filial, Linha OTB e Cor. Utiliza dados históricos, estoque e tendências de mercado (Google Trends) para prever os próximos 6 meses e apoiar decisões estratégicas.
 """)
 
 uploaded_file = st.file_uploader("\U0001F4C2 Faça upload do arquivo Excel", type=["xlsx"])
@@ -110,7 +130,7 @@ if uploaded_file:
     usar_sazonalidade = st.sidebar.checkbox("Considerar sazonalidade (verão, inverno, etc)", value=True)
 
     linhas_otb_unicas = tuple(df_venda["linha_otb"].dropna().unique().tolist())
-    trend_uplift = get_trend_uplift(linhas_otb_unicas)
+    trend_uplift, df_trends_raw = get_trend_uplift(linhas_otb_unicas)
 
     periodos = 6
     datas_prev = pd.date_range(df_venda["ano_mes"].max() + relativedelta(months=1), periods=periodos, freq="MS")
@@ -125,38 +145,4 @@ if uploaded_file:
         ajuste = trend_uplift.get(linha, 0) * peso_google_trends
         prev_adj = (prev * (1 + ajuste)).clip(lower=0)
         estoque_rec = (prev_adj * 2.8).round()
-        estoque_atual = df_estoque.loc[(df_estoque["linha"] == linha) & (df_estoque["cor"] == cor) & (df_estoque["filial"] == filial), "saldo_empresa"].sum()
-
-        cobertura = estoque_atual / prev_adj.mean() if prev_adj.mean() > 0 else 0
-        recomendacao = "Acelerar Venda" if cobertura > 2.8 else "Necessidade Recompra"
-
-        registro = {"linha_otb": linha, "cor_produto": cor, "filial": filial, "estoque_atual": estoque_atual,
-                    "cobertura_estoque_meses": round(cobertura, 2), "recomendacao": recomendacao}
-
-        for dt, val, est_rec in zip(prev_adj.index, prev_adj.values, estoque_rec.values):
-            if dt in datas_prev:
-                registro[f"venda_prevista_{dt.strftime('%Y_%m')}"] = round(val, 0)
-                registro[f"estoque_recomendado_{dt.strftime('%Y_%m')}"] = int(est_rec)
-
-        resultado.append(registro)
-
-    progresso.progress(100)
-
-    st.success("Previsão gerada com sucesso!")
-    df_resultado = pd.DataFrame(resultado)
-
-    # --- Novas funcionalidades ---
-    st.subheader("\U0001F4CB Pré-visualização do Resultado")
-    st.dataframe(df_resultado.head(150), use_container_width=True)
-
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_resultado.to_excel(writer, index=False, sheet_name='Resumo_Previsao')
-    output.seek(0)
-
-    st.download_button(
-        label="\U0001F4E5 Baixar Excel com Previsões",
-        data=output,
-        file_name="previsao_estoque.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        estoque_atual = df_estoque.loc[(df_estoque["linha"] == linha) & (df_estoque["cor"] == cor) & (df_estoque
