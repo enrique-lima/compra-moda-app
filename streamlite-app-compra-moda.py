@@ -154,7 +154,7 @@ if uploaded_file:
         "saldo_empresa"
         ].sum()
 
-        compra_sugerida = (estoque_rec.sum() - estoque_atual).clip(lower=0)
+        compra_sugerida = max(estoque_rec.sum() - estoque_atual, 0)
 
         resultado.append({
             "linha_otb": linha,
