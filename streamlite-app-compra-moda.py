@@ -74,7 +74,7 @@ def forecast_serie_cache(serie_values: tuple, serie_index: tuple, passos: int, s
 st.image("https://raw.githubusercontent.com/enrique-lima/compra-moda-app/main/LOGO_TL.png", width=300)
 st.title("Previsão de Vendas e Reposição de Estoque")
 st.markdown("""
-Este app realiza forecast de vendas e recomendações de compra para a Tatiana Loureiro, com análise por Filial, Linha OTB e Cor. Utiliza dados históricos, estoque e tendências de mercado (Google Trends) para prever os próximos 6 meses e apoiar decisões estratégicas.
+Este app realiza forecast de vendas e recomendações de compra , com análise por Filial, Linha OTB e Cor. Utiliza dados históricos, estoque e tendências de mercado (Google Trends) para prever os próximos 6 meses e apoiar decisões estratégicas.
 """)
 
 uploaded_file = st.file_uploader("\U0001F4C2 Faça upload do arquivo Excel", type=["xlsx"])
