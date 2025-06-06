@@ -4,3 +4,7 @@ openpyxl
 statsmodels
 pytrends
 python-dateutil
+pandas
+openpyxl
+plotly
+streamlit
