@@ -154,8 +154,19 @@ if uploaded_file:
     st.success("Previsão gerada com sucesso!")
     st.dataframe(df_resultado)
 
+    # --- FILTRO MULTISELEÇÃO PARA LINHA_OTB ---
+    linhas_disponiveis = df_resultado["linha_otb"].unique()
+    linhas_selecionadas = st.multiselect(
+        "Selecione as linhas OTB para o gráfico:",
+        options=linhas_disponiveis,
+        default=linhas_disponiveis.tolist()
+    )
+
+    # Filtra dados para o gráfico conforme seleção
+    df_graf_filtrado = df_resultado[df_resultado["linha_otb"].isin(linhas_selecionadas)]
+
     # Gráfico combinado por linha_otb (agregando filiais e cores)
-    df_graf = df_resultado.groupby("linha_otb").sum(numeric_only=True).reset_index()
+    df_graf = df_graf_filtrado.groupby("linha_otb").sum(numeric_only=True).reset_index()
     df_graf_vendas = df_graf[[c for c in df_graf.columns if c.startswith("venda_prevista_")]]
     df_graf_estoque = df_graf[[c for c in df_graf.columns if c.startswith("estoque_recomendado_")]]
     meses_graf = [pd.to_datetime(c.replace("venda_prevista_", "") + "_01", format="%Y_%m_%d") for c in df_graf_vendas.columns]
