@@ -98,7 +98,7 @@ if uploaded_file:
     df_estoque = normalizar_colunas(xls.parse("ESTOQUE"))
 
     # Validação de colunas essenciais
-    required_venda = ["linha_otb", "cor_produto", "qtd_vendida", "ano_venda", "mes_venda"]
+    required_venda = ["linha_otb", "cor_produto", "qtd_vendida", "ano_venda", "mes_venda", "filial"]
     required_estoque = ["linha", "cor", "saldo_empresa"]
     if missing := [c for c in required_venda if c not in df_venda.columns]:
         st.error(f"Faltam colunas na aba VENDA: {', '.join(missing)}"); st.stop()
@@ -127,16 +127,16 @@ if uploaded_file:
     datas_prev = pd.date_range(df_venda["ano_mes"].max() + relativedelta(months=1), periods=periodos, freq="MS")
     resultado = []
 
-    for (linha, cor), grupo in df_venda.groupby(["linha_otb", "cor_produto"]):
+    for (linha, cor, filial), grupo in df_venda.groupby(["linha_otb", "cor_produto", "filial"]):
         serie = grupo.groupby("ano_mes")["qtd_vendida"].sum().sort_index().asfreq("MS", fill_value=0)
         prev = forecast_serie(serie, passos=periodos)
         ajuste = trend_uplift.get(linha, 0) * peso_google_trends
-        prev_adj = prev * (1 + ajuste)
+        prev_adj = (prev * (1 + ajuste)).clip(lower=0)
         estoque_rec = (prev_adj.mean() * 2.8).round()
 
         estoque_atual = df_estoque.loc[(df_estoque["linha"]==linha)&(df_estoque["cor"]==cor), "saldo_empresa"].sum()
 
-        registro = {"linha_otb":linha, "cor_produto":cor, "estoque_atual":estoque_atual}
+        registro = {"linha_otb":linha, "cor_produto":cor, "filial":filial, "estoque_atual":estoque_atual}
         for dt, val in prev_adj.items():
             registro[f"venda_prevista_{dt.strftime('%Y_%m')}"] = round(val,0)
         registro["estoque_recomendado_total"] = int(estoque_rec)
@@ -145,20 +145,20 @@ if uploaded_file:
     df_resultado = pd.DataFrame(resultado)
 
     # Organizar colunas
-    colunas = ["linha_otb","cor_produto","estoque_atual"] + [f"venda_prevista_{d.strftime('%Y_%m')}" for d in datas_prev] + ["estoque_recomendado_total"]
+    colunas = ["linha_otb","cor_produto","filial","estoque_atual"] + [f"venda_prevista_{d.strftime('%Y_%m')}" for d in datas_prev] + ["estoque_recomendado_total"]
     df_resultado = df_resultado[colunas]
 
     st.success("Previsão gerada com sucesso!")
     st.dataframe(df_resultado)
 
-    # ─────────── Gráfico Empilhado com filtro multiselect ───────────
+    # ────────── Gráfico Empilhado com filtro multiselect ──────────
     st.subheader("📊 Gráfico de Previsão de Vendas (Coluna Empilhada)")
     linhas_sel = st.multiselect(
         "Selecione linhas OTB:", options=df_resultado["linha_otb"].unique(), default=df_resultado["linha_otb"].unique()[:1]
     )
     if linhas_sel:
         df_plot = df_resultado[df_resultado["linha_otb"].isin(linhas_sel)].melt(
-            id_vars=["linha_otb","cor_produto"],
+            id_vars=["linha_otb","cor_produto","filial"],
             value_vars=[c for c in df_resultado.columns if c.startswith("venda_prevista_")],
             var_name="mês", value_name="vendas_previstas"
         )
@@ -176,7 +176,7 @@ if uploaded_file:
     else:
         st.info("Selecione ao menos uma linha para visualizar o gráfico.")
 
-    # ─────────── Download do Excel ───────────
+    # ────────── Download do Excel ──────────
     buffer = BytesIO()
     df_resultado.to_excel(buffer, index=False)
     buffer.seek(0)
