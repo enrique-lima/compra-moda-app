@@ -97,7 +97,7 @@ if uploaded_file:
     df_venda["ano_mes"] = pd.to_datetime(df_venda["ano_venda"].astype(int).astype(str) + "-" + df_venda["mes_num"].astype(int).astype(str) + "-01")
 
     peso_google_trends = st.sidebar.slider("Peso do ajuste Google Trends (%)", 0, 100, 100, 5) / 100
-    usar_sazonalidade = st.sidebar.checkbox("Considerar sazonalidade", value=True)
+    usar_sazonalidade = st.sidebar.checkbox("Considerar sazonalidade (verão, inverno, etc)", value=True)
 
     linhas_otb_unicas = tuple(df_venda["linha_otb"].dropna().unique().tolist())
     trend_uplift = get_trend_uplift(linhas_otb_unicas)
