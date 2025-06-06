@@ -1,0 +1,169 @@
+import streamlit as st
+import pandas as pd
+import unicodedata
+from io import BytesIO
+from dateutil.relativedelta import relativedelta
+from statsmodels.tsa.api import ExponentialSmoothing
+from pytrends.request import TrendReq
+import time
+
+st.set_page_config(page_title="Forecast e Recomendação de Estoque", layout="wide")
+
+st.title("Forecast e Recomendação de Estoque")
+
+st.markdown("""
+Faça upload do arquivo Excel com as abas **VENDA** e **ESTOQUE**.
+O sistema executa forecast de vendas e recomendações de estoque para os próximos 3 meses.
+""")
+
+# === Funções de apoio ===
+
+def normalizar_colunas(df):
+    df.columns = [
+        unicodedata.normalize('NFKD', col).encode('ASCII', 'ignore').decode('utf-8')
+        .strip().lower().replace(' ', '_') for col in df.columns
+    ]
+    return df
+
+def get_trend_uplift(linhas_otb):
+    pytrends = TrendReq(hl='pt-BR', tz=360)
+    genericos = [
+        'acessorios', 'alpargata', 'anabela', 'mocassim', 'bolsa', 'bota', 'cinto', 'loafer', 'rasteira',
+        'sandalia', 'sapatilha', 'scarpin', 'tenis', 'meia', 'meia pata', 'salto', 'salto fino',
+        'salto normal', 'sapato tratorado', 'mule', 'oxford', 'papete', 'peep flat', 'slide'
+    ]
+
+    tendencias = {}
+    for linha in linhas_otb:
+        try:
+            termos_busca = [linha.lower()] + genericos
+            pytrends.build_payload(termos_busca, cat=0, timeframe='today 3-m', geo='BR')
+            df_trends = pytrends.interest_over_time()
+            if not df_trends.empty:
+                media_base = df_trends[linha.lower()] if linha.lower() in df_trends.columns else pd.Series([0])
+                media_base = media_base.mean() if not media_base.empty else 0
+                media_genericos = df_trends[genericos].mean(axis=1).mean()
+                uplift = ((media_base + media_genericos) / 2 - 50) / 100
+                tendencias[linha] = round(uplift, 3)
+            else:
+                pytrends.build_payload(genericos, cat=0, timeframe='today 3-m', geo='BR')
+                df_trends = pytrends.interest_over_time()
+                media_genericos = df_trends[genericos].mean(axis=1).mean() if not df_trends.empty else 50
+                uplift = (media_genericos - 50) / 100
+                tendencias[linha] = round(uplift, 3)
+            time.sleep(1)
+        except Exception:
+            tendencias[linha] = 0
+    return tendencias
+
+def forecast_serie(serie, passos=3):
+    if serie.count() >= 6:
+        modelo = ExponentialSmoothing(serie, trend='add', seasonal=None)
+        modelo_fit = modelo.fit()
+        previsao = modelo_fit.forecast(passos)
+    else:
+        previsao = pd.Series(
+            [serie.mean()] * passos,
+            index=pd.date_range(serie.index[-1] + relativedelta(months=1), periods=passos, freq='MS')
+        )
+    return previsao
+
+def to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Resultado')
+    return output.getvalue()
+
+# === Upload do arquivo ===
+uploaded_file = st.file_uploader("Upload do arquivo Excel", type=["xlsx"])
+
+if uploaded_file:
+    try:
+        xls = pd.ExcelFile(uploaded_file)
+        df = xls.parse('VENDA')
+        df_estoque = xls.parse('ESTOQUE')
+
+        # Normalizar colunas
+        df = normalizar_colunas(df)
+        df_estoque = normalizar_colunas(df_estoque)
+
+        # Corrigir coluna errada
+        if 'tamanho_produot' in df.columns:
+            df = df.rename(columns={'tamanho_produot': 'tamanho_produto'})
+
+        # Preparar datas
+        meses_ordem = {
+            'janeiro': 1, 'fevereiro': 2, 'marco': 3, 'abril': 4,
+            'maio': 5, 'junho': 6, 'julho': 7, 'agosto': 8,
+            'setembro': 9, 'outubro': 10, 'novembro': 11, 'dezembro': 12
+        }
+        df['mes_num'] = df['mes_venda'].str.lower().map(meses_ordem)
+        df = df.dropna(subset=['ano_venda', 'mes_num'])
+        df['mes_num'] = df['mes_num'].astype(int)
+        df['ano_mes'] = pd.to_datetime(
+            df['ano_venda'].astype(int).astype(str) + '-' + df['mes_num'].astype(str) + '-01',
+            format='%Y-%m-%d'
+        )
+
+        linhas_otb_unicas = df['linha_otb'].dropna().unique().tolist()
+        trend_uplift = get_trend_uplift(linhas_otb_unicas)
+
+        periodos_forecast = 3
+        last_date = df['ano_mes'].max()
+        datas_previstas = pd.date_range(last_date + relativedelta(months=1), periods=periodos_forecast, freq='MS')
+
+        resultado = []
+
+        for (linha_otb, cor_produto), grupo in df.groupby(['linha_otb', 'cor_produto']):
+            serie = grupo.groupby('ano_mes')['qtd_vendida'].sum().sort_index()
+            serie = serie.asfreq('MS').fillna(0)
+
+            prev = forecast_serie(serie, passos=periodos_forecast)
+            g = trend_uplift.get(linha_otb, 0)
+            prev_adj = prev * (1 + g)
+            estoque_rec = (prev_adj.mean() * 2.8).round()
+
+            estoque_atual = df_estoque.loc[
+                (df_estoque['linha_otb'] == linha_otb) & (df_estoque['cor'] == cor_produto),
+                'saldo_empresa'
+            ].sum()
+
+            registro = {
+                'linha_otb': linha_otb,
+                'cor_produto': cor_produto,
+                'estoque_atual': estoque_atual
+            }
+
+            for dt_prev, val in prev_adj.items():
+                col = f'venda_prevista_{dt_prev.strftime("%Y_%m")}'
+                registro[col] = round(val, 0)
+
+            registro['estoque_recomendado_total'] = int(estoque_rec)
+            resultado.append(registro)
+
+        df_resultado = pd.DataFrame(resultado)
+        # Ordenar colunas para output
+        meta_cols = ['linha_otb', 'cor_produto', 'estoque_atual']
+        for dt in datas_previstas:
+            meta_cols.append(f'venda_prevista_{dt.strftime("%Y_%m")}')
+        meta_cols.append('estoque_recomendado_total')
+
+        df_resultado = df_resultado[meta_cols]
+
+        st.success("Forecast e recomendação gerados com sucesso!")
+
+        st.dataframe(df_resultado)
+
+        excel_data = to_excel(df_resultado)
+
+        st.download_button(
+            label="⬇️ Download do resultado",
+            data=excel_data,
+            file_name='forecast_recomendacao_estoque.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+
+    except Exception as e:
+        st.error(f"Erro ao processar o arquivo: {e}")
+else:
+    st.info("Aguardando upload do arquivo Excel.")
