@@ -6,20 +6,12 @@ from PIL import Image
 import os
 
 # Tente abrir a imagem do logo de forma segura
-import os
-from PIL import Image
-import streamlit as st
-
-# Tente abrir a imagem do logo de forma segura
 logo_path = "LOGO_TL.png"
 if os.path.exists(logo_path):
     logo_image = Image.open(logo_path)
     st.image(logo_image, width=150)
 else:
     st.warning("Logo não encontrado. Por favor, confirme se o arquivo LOGO_TL.png está na pasta do app.")
-
-# === Estilização via CSS ===
-
 
 # === Estilização via CSS ===
 st.markdown("""
@@ -59,13 +51,22 @@ if uploaded_file:
     xls = pd.ExcelFile(uploaded_file)
     df = pd.read_excel(xls, 'VENDA')
     df_estoque = pd.read_excel(xls, 'ESTOQUE')
+    
+    # Verifique as colunas para garantir os nomes corretos
+    st.write("Colunas disponíveis no dataframe VENDA:", df.columns.tolist())
+    st.write(df.head())
 
-    # Simula forecast simplificado (mock)
-    df_resultado = df.groupby(['linha_otb', 'cor_produto'])[['qtd_vendida']].sum().reset_index()
+    # Ajuste o agrupamento conforme colunas existentes
+    # Troque 'cor_produto' por 'cor' se essa for a coluna correta
+    df_resultado = df.groupby(['linha_otb', 'cor'])[['qtd_vendida']].sum().reset_index()
+
     df_resultado['venda_prevista_mes_1'] = df_resultado['qtd_vendida'] * 1.1
     df_resultado['venda_prevista_mes_2'] = df_resultado['qtd_vendida'] * 1.15
     df_resultado['venda_prevista_mes_3'] = df_resultado['qtd_vendida'] * 1.2
-    df_resultado['estoque_recomendado_total'] = (df_resultado[['venda_prevista_mes_1','venda_prevista_mes_2','venda_prevista_mes_3']].mean(axis=1) * 2.8).round()
+    df_resultado['estoque_recomendado_total'] = (
+        df_resultado[['venda_prevista_mes_1','venda_prevista_mes_2','venda_prevista_mes_3']]
+        .mean(axis=1) * 2.8
+    ).round()
 
     st.success("Previsão gerada com sucesso!")
     st.dataframe(df_resultado)
@@ -74,12 +75,12 @@ if uploaded_file:
     st.subheader("📊 Gráfico de Previsão de Vendas")
     linha_filtrada = st.selectbox("Selecione a linha do produto:", df_resultado['linha_otb'].unique())
     df_grafico = df_resultado[df_resultado['linha_otb'] == linha_filtrada].melt(
-        id_vars=['linha_otb', 'cor_produto'],
+        id_vars=['linha_otb', 'cor'],
         value_vars=['venda_prevista_mes_1', 'venda_prevista_mes_2', 'venda_prevista_mes_3'],
         var_name='mes',
         value_name='vendas_previstas'
     )
-    fig = px.bar(df_grafico, x='mes', y='vendas_previstas', color='cor_produto', barmode='group',
+    fig = px.bar(df_grafico, x='mes', y='vendas_previstas', color='cor', barmode='group',
                  labels={'mes': 'Mês', 'vendas_previstas': 'Vendas Previstas'},
                  title=f"Previsão de Vendas para {linha_filtrada}")
     st.plotly_chart(fig)
