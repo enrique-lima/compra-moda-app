@@ -143,6 +143,7 @@ if uploaded_file:
     progresso.progress(100)
 
     st.success("Previsão gerada com sucesso!")
+    df_resultado = pd.DataFrame(resultado)
 
     # --- Novas funcionalidades ---
     st.subheader("\U0001F4CB Pré-visualização do Resultado")
