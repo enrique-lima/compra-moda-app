@@ -133,46 +133,6 @@ if uploaded_file:
 
     st.success("Previsão gerada com sucesso!")
 
-    linhas_otb_disponiveis = df_resultado["linha_otb"].unique()
-    linhas_otb_selecionadas = st.multiselect(
-        "Selecione as linhas OTB para visualizar no gráfico (máx 10)",
-        options=linhas_otb_disponiveis,
-        default=linhas_otb_disponiveis.tolist(),
-        max_selections=10,
-    )
-
-    df_filtrado = df_resultado[df_resultado["linha_otb"].isin(linhas_otb_selecionadas)]
-
-    venda_cols = [c for c in df_filtrado.columns if c.startswith("venda_prevista_")]
-    estoque_cols = [c for c in df_filtrado.columns if c.startswith("estoque_recomendado_")]
-
-    df_venda_long = df_filtrado[["linha_otb"] + venda_cols].melt(id_vars=["linha_otb"], var_name="mes", value_name="venda_prevista")
-    df_venda_long["mes"] = pd.to_datetime(df_venda_long["mes"].str.replace("venda_prevista_", "") + "_01", format="%Y_%m_%d")
-
-    df_estoque_long = df_filtrado[["linha_otb"] + estoque_cols].melt(id_vars=["linha_otb"], var_name="mes", value_name="estoque_recomendado")
-    df_estoque_long["mes"] = pd.to_datetime(df_estoque_long["mes"].str.replace("estoque_recomendado_", "") + "_01", format="%Y_%m_%d")
-
-    df_plot = pd.merge(df_venda_long, df_estoque_long, on=["linha_otb", "mes"])
-
-    hoje = datetime.today().replace(day=1)
-    fim_periodo = hoje + relativedelta(months=6)
-    df_plot = df_plot[(df_plot["mes"] >= hoje) & (df_plot["mes"] < fim_periodo)]
-
-    fig = go.Figure()
-
-    for i, linha in enumerate(df_plot["linha_otb"].unique()):
-        df_linha = df_plot[df_plot["linha_otb"] == linha].sort_values("mes")
-        fig.add_trace(go.Scatter(x=df_linha["mes"], y=df_linha["venda_prevista"], name=f"Venda Prevista - {linha}", mode="lines+markers", line=dict(color=f"rgba({(i*30)%255},{(i*70)%255},{(i*110)%255},1)"), yaxis="y1"))
-        fig.add_trace(go.Bar(x=df_linha["mes"], y=df_linha["estoque_recomendado"], name=f"Estoque Recomendado - {linha}", opacity=0.6, offsetgroup=i, yaxis="y2"))
-
-    fig.update_layout(title="Previsão de Vendas e Estoque Recomendado por Linha OTB", xaxis_title="Mês",
-                      yaxis=dict(title="Venda Prevista", side="left"),
-                      yaxis2=dict(title="Estoque Recomendado", overlaying="y", side="right"),
-                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                      barmode="group", template="plotly_white", height=600)
-
-    st.plotly_chart(fig, use_container_width=True)
-
     # --- Novas funcionalidades ---
     st.subheader("\U0001F4CB Pré-visualização do Resultado")
     st.dataframe(df_resultado.head(50), use_container_width=True)
