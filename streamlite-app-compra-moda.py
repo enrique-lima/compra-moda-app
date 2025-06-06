@@ -175,8 +175,8 @@ if uploaded_file:
     linhas_otb_disponiveis = df_resultado["linha_otb"].unique()
     linhas_otb_selecionadas = st.multiselect(
         "Selecione as linhas OTB para visualizar no gráfico (máx 10)",
-        options=linhas_otb_disponiveis,
-        default=linhas_otb_disponiveis.tolist(),
+        options=df_resultado["linha_otb"].unique(),
+        default=df_resultado["linha_otb"].unique()[:10],  # garante até 10 selecionados por padrão
         max_selections=10,
     )
 
