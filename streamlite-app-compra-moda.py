@@ -34,11 +34,10 @@ st.markdown(
 st.title("Previsão de Vendas e Reposição de Estoque")
 
 st.markdown(
-    """
-    📥 [Clique aqui para baixar o template Excel para upload no app](https://github.com/enrique-lima/compra-moda-app/raw/main/template.xlsx)
-    """,
+    '[📥 Baixe o template Excel para upload aqui](https://drive.google.com/uc?export=download&id=1ip_FU9Ah1zjyFhaW6vVUP87I_sosy0r8)',
     unsafe_allow_html=True
 )
+
 
 st.write(
     """
