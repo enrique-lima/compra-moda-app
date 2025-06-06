@@ -2,17 +2,21 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 import plotly.express as px
-import unicodedata, os, time
-from PIL import Image
+import unicodedata, time
 from dateutil.relativedelta import relativedelta
 from statsmodels.tsa.api import ExponentialSmoothing
 from pytrends.request import TrendReq
+from PIL import Image
+import requests
+from io import BytesIO
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Configurações Visuais e Logo via link web
+# Carregando logo direto do repositório GitHub
 # ────────────────────────────────────────────────────────────────────────────────
-st.image("https://raw.githubusercontent.com/enrique-lima/compra-moda-app/9ac980086bec03f84b0546d558f0ef55245193af/LOGO_TL.png", width=300)
-
+url_logo = "https://raw.githubusercontent.com/enrique-lima/compra-moda-app/9ac980086bec03f84b0546d558f0ef55245193af/LOGO_TL.png"
+response = requests.get(url_logo)
+logo = Image.open(BytesIO(response.content))
+st.image(logo, width=150)
 
 st.markdown(
     """
@@ -49,7 +53,7 @@ def normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_trend_uplift(linhas_otb: list[str]) -> dict[str, float]:
-    """Calcula o uplift percentual médio das linhas usando Google Trends."""
+    """Calcula o uplift percentual médio das linhas usando Google Trends."""
     pytrends = TrendReq(hl="pt-BR", tz=360)
     genericos = [
         "acessorios","alpargata","anabela","mocassim","bolsa","bota","cinto","loafer","rasteira",
@@ -133,20 +137,25 @@ if uploaded_file:
         prev = forecast_serie(serie, passos=periodos)
         ajuste = trend_uplift.get(linha, 0) * peso_google_trends
         prev_adj = (prev * (1 + ajuste)).clip(lower=0)
-        estoque_rec = (prev_adj.mean() * 2.8).round()
 
-        estoque_atual = df_estoque.loc[(df_estoque["linha"]==linha)&(df_estoque["cor"]==cor), "saldo_empresa"].sum()
+        estoque_atual = df_estoque.loc[(df_estoque["linha"] == linha) & (df_estoque["cor"] == cor), "saldo_empresa"].sum()
 
-        registro = {"linha_otb":linha, "cor_produto":cor, "filial":filial, "estoque_atual":estoque_atual}
+        registro = {"linha_otb": linha, "cor_produto": cor, "filial": filial, "estoque_atual": estoque_atual}
         for dt, val in prev_adj.items():
-            registro[f"venda_prevista_{dt.strftime('%Y_%m')}"] = round(val,0)
-        registro["estoque_recomendado_total"] = int(estoque_rec)
+            registro[f"venda_prevista_{dt.strftime('%Y_%m')}"] = round(val, 0)
+            registro[f"estoque_recomendado_{dt.strftime('%Y_%m')}"] = round(val * 2.8, 0)  # estoque ideal para o mês
+
+        registro["estoque_recomendado_total"] = int((prev_adj.mean() * 2.8).round())
+
         resultado.append(registro)
 
     df_resultado = pd.DataFrame(resultado)
 
     # Organizar colunas
-    colunas = ["linha_otb","cor_produto","filial","estoque_atual"] + [f"venda_prevista_{d.strftime('%Y_%m')}" for d in datas_prev] + ["estoque_recomendado_total"]
+    colunas = ["linha_otb", "cor_produto", "filial", "estoque_atual"] + \
+              [f"venda_prevista_{d.strftime('%Y_%m')}" for d in datas_prev] + \
+              [f"estoque_recomendado_{d.strftime('%Y_%m')}" for d in datas_prev] + \
+              ["estoque_recomendado_total"]
     df_resultado = df_resultado[colunas]
 
     st.success("Previsão gerada com sucesso!")
@@ -159,17 +168,17 @@ if uploaded_file:
     )
     if linhas_sel:
         df_plot = df_resultado[df_resultado["linha_otb"].isin(linhas_sel)].melt(
-            id_vars=["linha_otb","cor_produto","filial"],
+            id_vars=["linha_otb", "cor_produto", "filial"],
             value_vars=[c for c in df_resultado.columns if c.startswith("venda_prevista_")],
             var_name="mês", value_name="vendas_previstas"
         )
-        df_plot["mês_ord"] = pd.to_datetime(df_plot["mês"].str.replace("venda_prevista_","")+"01", format="%Y_%m%d")
+        df_plot["mês_ord"] = pd.to_datetime(df_plot["mês"].str.replace("venda_prevista_", "") + "01", format="%Y_%m%d")
         df_plot = df_plot.sort_values("mês_ord")
 
         fig = px.bar(
             df_plot, x="mês", y="vendas_previstas", color="cor_produto", barmode="stack",
             facet_col="linha_otb", category_orders={"mês": df_plot["mês"].unique()},
-            labels={"mês":"Mês","vendas_previstas":"Vendas Previstas","cor_produto":"Cor"},
+            labels={"mês": "Mês", "vendas_previstas": "Vendas Previstas", "cor_produto": "Cor"},
             title="Previsão de Vendas • Barras Empilhadas por Cor", height=600
         )
         fig.update_xaxes(tickangle=45)
