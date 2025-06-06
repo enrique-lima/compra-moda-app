@@ -124,8 +124,9 @@ if uploaded_file:
                     "cobertura_estoque_meses": round(cobertura, 2), "recomendacao": recomendacao}
 
         for dt, val, est_rec in zip(prev_adj.index, prev_adj.values, estoque_rec.values):
-            registro[f"venda_prevista_{dt.strftime('%Y_%m')}"] = round(val, 0)
-            registro[f"estoque_recomendado_{dt.strftime('%Y_%m')}"] = int(est_rec)
+            if dt in datas_prev:
+                registro[f"venda_prevista_{dt.strftime('%Y_%m')}"] = round(val, 0)
+                registro[f"estoque_recomendado_{dt.strftime('%Y_%m')}"] = int(est_rec)
 
         resultado.append(registro)
 
@@ -135,7 +136,7 @@ if uploaded_file:
 
     # --- Novas funcionalidades ---
     st.subheader("\U0001F4CB Pré-visualização do Resultado")
-    st.dataframe(df_resultado.head(50), use_container_width=True)
+    st.dataframe(df_resultado.head(150), use_container_width=True)
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
