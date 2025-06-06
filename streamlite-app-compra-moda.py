@@ -121,7 +121,7 @@ if uploaded_file:
     st.sidebar.subheader("⚙️ Ajustes de Forecast")
     peso_google_trends = st.sidebar.slider("Peso do ajuste Google Trends (%)", 0, 100, 100, 5) / 100
 
-    st.info("Consultando Google Trends… aguarde ~1 minuto se houver muitas linhas.")
+    
     trend_uplift = get_trend_uplift(df_venda["linha_otb"].dropna().unique().tolist())
 
     # Forecast
