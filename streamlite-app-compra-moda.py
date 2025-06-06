@@ -158,16 +158,71 @@ if uploaded_file:
     st.success("Previsão gerada com sucesso!")
     st.dataframe(df_resultado)
 
-    # Gráfico combinado por linha_otb (agregando filiais e cores)
-    df_graf = df_resultado.groupby("linha_otb").sum(numeric_only=True).reset_index()
-    df_graf["total_venda_prevista"] = df_graf[[c for c in df_graf.columns if c.startswith("venda_prevista_")]].sum(axis=1)
+# --- FILTRO MULTISELETOR PARA LINHA OTB ---
+linhas_otb_disponiveis = df_resultado["linha_otb"].unique()
+linhas_otb_selecionadas = st.sidebar.multiselect(
+    "Selecione as linhas OTB para visualizar no gráfico",
+    options=linhas_otb_disponiveis,
+    default=linhas_otb_disponiveis.tolist()
+)
 
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=df_graf["linha_otb"],
-        y=df_graf["total_venda_prevista"],
-        name="Venda Prevista 6 meses",
-        marker_color="#004080",
-    ))
-    fig.update_layout(title="Venda Prevista por Linha OTB (6 meses futuros)", xaxis_title="Linha OTB", yaxis_title="Quantidade")
-    st.plotly_chart(fig, use_container_width=True)
+# Filtra o dataframe conforme seleção
+df_filtrado = df_resultado[df_resultado["linha_otb"].isin(linhas_otb_selecionadas)]
+
+# Preparar dados para o gráfico combinado
+# Somar vendas previstas e estoque recomendado por linha_otb
+venda_cols = [c for c in df_filtrado.columns if c.startswith("venda_prevista_")]
+estoque_cols = [c for c in df_filtrado.columns if c.startswith("estoque_recomendado_")]
+
+df_graf = df_filtrado.groupby("linha_otb")[venda_cols + estoque_cols].sum()
+
+# Totalizar vendas previstas e estoque recomendado dos 6 meses para cada linha_otb
+df_graf["total_venda_prevista"] = df_graf[venda_cols].sum(axis=1)
+df_graf["total_estoque_recomendado"] = df_graf[estoque_cols].sum(axis=1)
+
+import plotly.graph_objects as go
+
+fig = go.Figure()
+
+# Adiciona barras (estoque recomendado)
+fig.add_trace(go.Bar(
+    x=df_graf.index,
+    y=df_graf["total_estoque_recomendado"],
+    name="Estoque Recomendado (colunas)",
+    marker_color="#1f77b4",
+    yaxis="y1",
+))
+
+# Adiciona linha (venda prevista)
+fig.add_trace(go.Scatter(
+    x=df_graf.index,
+    y=df_graf["total_venda_prevista"],
+    name="Venda Prevista (linha)",
+    mode="lines+markers",
+    marker=dict(color="#ff7f0e"),
+    yaxis="y2",
+))
+
+fig.update_layout(
+    title="Venda Prevista vs Estoque Recomendado por Linha OTB (6 meses futuros)",
+    xaxis_title="Linha OTB",
+    yaxis=dict(
+        title="Estoque Recomendado",
+        side="left",
+        showgrid=False,
+        zeroline=False,
+    ),
+    yaxis2=dict(
+        title="Venda Prevista",
+        overlaying="y",
+        side="right",
+        showgrid=False,
+        zeroline=False,
+    ),
+    legend=dict(x=0.01, y=0.99, bordercolor="Black", borderwidth=1),
+    barmode="group",
+    template="plotly_white",
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
