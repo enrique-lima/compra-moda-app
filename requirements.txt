@@ -1,5 +1,6 @@
-pandas
 streamlit
+pandas
+openpyxl
 statsmodels
 pytrends
-openpyxl
+python-dateutil
