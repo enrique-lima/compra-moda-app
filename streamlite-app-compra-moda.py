@@ -9,13 +9,9 @@ from statsmodels.tsa.api import ExponentialSmoothing
 from pytrends.request import TrendReq
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Configurações Visuais e Logo
+# Configurações Visuais e Logo via link web
 # ────────────────────────────────────────────────────────────────────────────────
-logo_path = "LOGO_TL.png"
-if os.path.exists(logo_path):
-    st.image(Image.open(logo_path), width=150)
-else:
-    st.warning("Logo não encontrado. Coloque 'LOGO_TL.png' na pasta do app ou ajuste o caminho.")
+st.image("https://seusite.com/logo.png", width=150)
 
 st.markdown(
     """
@@ -180,7 +176,7 @@ if uploaded_file:
     df_resultado.to_excel(buffer, index=False)
     buffer.seek(0)
     st.download_button(
-        "📥 Baixar Excel de Resultados",
+        "📅 Baixar Excel de Resultados",
         data=buffer,
         file_name="forecast_sugestao_compras.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
