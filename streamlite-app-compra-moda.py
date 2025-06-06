@@ -7,10 +7,9 @@ from dateutil.relativedelta import relativedelta
 from statsmodels.tsa.api import ExponentialSmoothing
 from pytrends.request import TrendReq
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Configurações Visuais e Logo local
-# ────────────────────────────────────────────────────────────────────────────────
 from PIL import Image
+
+# Configurações visuais e logo
 logo_path = "LOGO_TL.png"
 st.image(logo_path, width=150)
 
@@ -26,19 +25,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("Previsão de Vendas e Reposição de Estoque")
+st.title("Previsão de Vendas e Estoque com Sazonalidade por Estações")
 st.write(
     """
-    Este app gera previsão de vendas por **linha OTB**, **cor de produto** e **filial** para os próximos **6 meses**, 
-    ajustada pela tendência de buscas do Google Trends, além da recomendação de estoque.
-
-    📂 Faça upload de um arquivo Excel com as abas **VENDA** e **ESTOQUE**.
+    Forecast considerando as estações do ano (verão, outono, inverno, primavera), 
+    linha OTB, cor de produto e filial para os próximos 6 meses, ajustado pela tendência do Google Trends.
     """
 )
-
-# ────────────────────────────────────────────────────────────────────────────────
-# Funções utilitárias
-# ────────────────────────────────────────────────────────────────────────────────
 
 def normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [
@@ -48,7 +41,6 @@ def normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def get_trend_uplift(linhas_otb: list[str]) -> dict[str, float]:
-    """Calcula o uplift percentual médio das linhas usando Google Trends."""
     pytrends = TrendReq(hl="pt-BR", tz=360)
     genericos = [
         "acessorios","alpargata","anabela","mocassim","bolsa","bota","cinto","loafer","rasteira",
@@ -70,13 +62,28 @@ def get_trend_uplift(linhas_otb: list[str]) -> dict[str, float]:
         except Exception:
             uplift = 0
         tendencias[linha] = round(uplift, 3)
-        time.sleep(1)  # evita bloqueio
+        time.sleep(1)
     return tendencias
 
-def forecast_serie(serie: pd.Series, passos: int = 6) -> pd.Series:
-    """Forecast com Exponential Smoothing considerando sazonalidade mensal (12 meses)."""
+def mes_para_estacao(mes: int) -> str:
+    if mes in [12, 1, 2]:
+        return "verao"
+    elif mes in [3, 4, 5]:
+        return "outono"
+    elif mes in [6, 7, 8]:
+        return "inverno"
+    elif mes in [9, 10, 11]:
+        return "primavera"
+    else:
+        return "desconhecida"
+
+def forecast_com_estacao(serie: pd.Series, passos: int = 6) -> pd.Series:
+    """
+    Forecast com Exponential Smoothing considerando sazonalidade trimestral (4 estações).
+    Se houver dados insuficientes, fallback para modelo sem sazonalidade.
+    """
     if serie.count() >= 12:
-        modelo = ExponentialSmoothing(serie, trend="add", seasonal="add", seasonal_periods=12)
+        modelo = ExponentialSmoothing(serie, trend="add", seasonal="add", seasonal_periods=4)
         prev = modelo.fit().forecast(passos)
     elif serie.count() >= 6:
         modelo = ExponentialSmoothing(serie, trend="add", seasonal=None)
@@ -88,9 +95,6 @@ def forecast_serie(serie: pd.Series, passos: int = 6) -> pd.Series:
         )
     return prev
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Upload do Excel
-# ────────────────────────────────────────────────────────────────────────────────
 uploaded_file = st.file_uploader("📂 Faça upload do arquivo Excel", type=["xlsx"])
 
 if uploaded_file:
@@ -98,7 +102,6 @@ if uploaded_file:
     df_venda = normalizar_colunas(xls.parse("VENDA"))
     df_estoque = normalizar_colunas(xls.parse("ESTOQUE"))
 
-    # Validação colunas obrigatórias
     required_venda = ["linha_otb", "cor_produto", "qtd_vendida", "ano_venda", "mes_venda", "filial"]
     required_estoque = ["linha", "cor", "filial", "saldo_empresa"]
     if missing := [c for c in required_venda if c not in df_venda.columns]:
@@ -108,7 +111,6 @@ if uploaded_file:
         st.error(f"Faltam colunas na aba ESTOQUE: {', '.join(missing)}")
         st.stop()
 
-    # Preparar datas
     meses = {
         "janeiro":1,"fevereiro":2,"marco":3,"abril":4,"maio":5,"junho":6,
         "julho":7,"agosto":8,"setembro":9,"outubro":10,"novembro":11,"dezembro":12,
@@ -117,21 +119,24 @@ if uploaded_file:
     df_venda = df_venda.dropna(subset=["ano_venda", "mes_num"])
     df_venda["ano_mes"] = pd.to_datetime(df_venda["ano_venda"].astype(int).astype(str) + "-" + df_venda["mes_num"].astype(int).astype(str) + "-01")
 
-    # Controle peso Google Trends
+    # Coluna estação
+    df_venda["estacao"] = df_venda["mes_num"].apply(mes_para_estacao)
+
     st.sidebar.subheader("⚙️ Ajustes de Forecast")
     peso_google_trends = st.sidebar.slider("Peso do ajuste Google Trends (%)", 0, 100, 100, 5) / 100
 
-    
+    st.info("Consultando Google Trends… aguarde ~1 minuto se houver muitas linhas.")
     trend_uplift = get_trend_uplift(df_venda["linha_otb"].dropna().unique().tolist())
 
-    # Forecast
     periodos = 6
     datas_prev = pd.date_range(df_venda["ano_mes"].max() + relativedelta(months=1), periods=periodos, freq="MS")
     resultado = []
 
     for (linha, cor, filial), grupo in df_venda.groupby(["linha_otb", "cor_produto", "filial"]):
+        # Sumarizar venda mensal
         serie = grupo.groupby("ano_mes")["qtd_vendida"].sum().sort_index().asfreq("MS", fill_value=0)
-        prev = forecast_serie(serie, passos=periodos)
+
+        prev = forecast_com_estacao(serie, passos=periodos)
         ajuste = trend_uplift.get(linha, 0) * peso_google_trends
         prev_adj = (prev * (1 + ajuste)).clip(lower=0)
 
@@ -145,9 +150,7 @@ if uploaded_file:
         estoque_mensal = []
         cobertura_meses = 2.8
         for i in range(periodos):
-            # Estoque esperado considerando venda prevista acumulada até mês i
             estoque_esperado = estoque_atual + estoque_mensal[-1] if i > 0 else estoque_atual
-            # Estoque recomendado mensalmente com base na previsão daquele mês multiplicado pela cobertura
             estoque_esperado = estoque_esperado + prev_adj.iloc[i] * cobertura_meses
             estoque_mensal.append(round(estoque_esperado, 0))
 
@@ -167,7 +170,6 @@ if uploaded_file:
 
     df_resultado = pd.DataFrame(resultado)
 
-    # Organizar colunas
     colunas = (
         ["linha_otb", "cor_produto", "filial", "estoque_atual"] +
         [f"venda_prevista_{d.strftime('%Y_%m')}" for d in datas_prev] +
@@ -176,11 +178,11 @@ if uploaded_file:
     )
     df_resultado = df_resultado[colunas]
 
-    st.success("Previsão gerada com sucesso!")
+    st.success("Previsão gerada com sazonalidade por estação!")
     st.dataframe(df_resultado)
 
-    # ────────── Gráfico Empilhado com filtro multiselect ──────────
-    st.subheader("📊 Gráfico de Previsão de Vendas (Coluna Empilhada)")
+    # Gráfico
+    st.subheader("📊 Gráfico de Previsão de Vendas")
     linhas_sel = st.multiselect(
         "Selecione linhas OTB:", options=df_resultado["linha_otb"].unique(), default=df_resultado["linha_otb"].unique()[:1]
     )
@@ -210,13 +212,13 @@ if uploaded_file:
     else:
         st.info("Selecione ao menos uma linha para visualizar o gráfico.")
 
-    # ────────── Download do Excel ──────────
+    # Download Excel
     buffer = BytesIO()
     df_resultado.to_excel(buffer, index=False)
     buffer.seek(0)
     st.download_button(
         "📅 Baixar Excel de Resultados",
         data=buffer,
-        file_name="forecast_sugestao_compras.xlsx",
+        file_name="forecast_sazonal_estacoes.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
