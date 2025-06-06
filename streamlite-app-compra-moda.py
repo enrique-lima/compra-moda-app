@@ -1,14 +1,14 @@
 import streamlit as st
 import pandas as pd
-import unicodedata
 from io import BytesIO
+import plotly.express as px
+from PIL import Image
+import os
+import unicodedata
 from dateutil.relativedelta import relativedelta
 from statsmodels.tsa.api import ExponentialSmoothing
 from pytrends.request import TrendReq
 import time
-import plotly.express as px
-from PIL import Image
-import os
 
 # --- Logo ---
 logo_path = "LOGO_TL.png"
@@ -18,7 +18,7 @@ if os.path.exists(logo_path):
 else:
     st.warning("Logo não encontrado. Por favor, confirme se o arquivo LOGO_TL.png está na pasta do app.")
 
-# --- CSS e título ---
+# --- Estilo e título ---
 st.markdown("""
     <style>
         .main {background-color: #f8f9fa;}
@@ -33,8 +33,10 @@ st.markdown("""
 st.title("Previsão de Vendas e Reposição de Estoque")
 st.write("""
 Este app permite fazer previsão de vendas por linha OTB e cor de produto, com sugestão de estoque baseada na tendência do Google Trends e histórico de vendas.
-✉️ Faça upload de um arquivo Excel com as abas `VENDA` e `ESTOQUE`.
+✉️ Envie um arquivo Excel com as abas `VENDA` e `ESTOQUE`.
 """)
+
+uploaded_file = st.file_uploader("📂 Faça upload do arquivo Excel", type=["xlsx"])
 
 def normalizar_colunas(df):
     df.columns = [
@@ -87,8 +89,6 @@ def forecast_serie(serie, passos=3):
         )
     return previsao
 
-uploaded_file = st.file_uploader("📂 Faça upload do arquivo Excel", type=["xlsx"])
-
 if uploaded_file:
     xls = pd.ExcelFile(uploaded_file)
     df = xls.parse('VENDA')
@@ -97,22 +97,9 @@ if uploaded_file:
     df = normalizar_colunas(df)
     df_estoque = normalizar_colunas(df_estoque)
 
-    # Corrigir possíveis erros de digitação
+    # Corrigir erro comum de digitação
     if 'tamanho_produot' in df.columns:
         df = df.rename(columns={'tamanho_produot': 'tamanho_produto'})
-
-    # Validação básica colunas essenciais
-    required_venda_cols = ['linha_otb', 'cor_produto', 'qtd_vendida', 'ano_venda', 'mes_venda']
-    missing_cols_venda = [c for c in required_venda_cols if c not in df.columns]
-    if missing_cols_venda:
-        st.error(f"Faltam colunas no VENDA: {', '.join(missing_cols_venda)}")
-        st.stop()
-
-    required_estoque_cols = ['linha', 'cor', 'saldo_empresa']
-    missing_cols_estoque = [c for c in required_estoque_cols if c not in df_estoque.columns]
-    if missing_cols_estoque:
-        st.error(f"Faltam colunas no ESTOQUE: {', '.join(missing_cols_estoque)}")
-        st.stop()
 
     # Preparar datas
     meses_ordem = {
@@ -120,77 +107,117 @@ if uploaded_file:
         'maio': 5, 'junho': 6, 'julho': 7, 'agosto': 8,
         'setembro': 9, 'outubro': 10, 'novembro': 11, 'dezembro': 12
     }
-
     df['mes_num'] = df['mes_venda'].str.lower().map(meses_ordem)
     df = df.dropna(subset=['ano_venda', 'mes_num'])
     df['mes_num'] = df['mes_num'].astype(int)
-    df['ano_mes'] = pd.to_datetime(df['ano_venda'].astype(int).astype(str) + '-' + df['mes_num'].astype(str) + '-01')
+    df['ano_mes'] = pd.to_datetime(
+        df['ano_venda'].astype(int).astype(str) + '-' + df['mes_num'].astype(str) + '-01',
+        format='%Y-%m-%d'
+    )
 
-    # Obter linhas OTB únicas e calcular uplift
-    linhas_otb_unicas = df['linha_otb'].dropna().unique().tolist()
-    with st.spinner('Consultando Google Trends... isso pode demorar um pouco...'):
+    # Validar colunas necessárias
+    col_linha = 'linha_otb'
+    col_cor = 'cor_produto'
+    col_qtd = 'qtd_vendida'
+
+    faltantes = [col for col in [col_linha, col_cor, col_qtd] if col not in df.columns]
+    if faltantes:
+        st.error(f"Erro: As seguintes colunas estão faltando na aba VENDA: {', '.join(faltantes)}")
+    else:
+        linhas_otb_unicas = df[col_linha].dropna().unique().tolist()
         trend_uplift = get_trend_uplift(linhas_otb_unicas)
 
-    periodos_forecast = 3
-    resultado = []
+        last_date = df['ano_mes'].max()
+        periodos_forecast = 3
+        datas_previstas = pd.date_range(last_date + relativedelta(months=1), periods=periodos_forecast, freq='MS')
 
-    # Forecast + ajuste
-    for (linha_otb, cor_produto), grupo in df.groupby(['linha_otb', 'cor_produto']):
-        serie = grupo.groupby('ano_mes')['qtd_vendida'].sum().sort_index()
-        serie = serie.asfreq('MS').fillna(0)
-        prev = forecast_serie(serie, passos=periodos_forecast)
-        g = trend_uplift.get(linha_otb, 0)
-        prev_adj = prev * (1 + g)
-        estoque_rec = (prev_adj.mean() * 2.8).round()
+        resultado = []
 
-        estoque_atual = df_estoque.loc[
-            (df_estoque['linha'] == linha_otb) & (df_estoque['cor'] == cor_produto),
-            'saldo_empresa'
-        ]
-        estoque_atual = pd.to_numeric(estoque_atual, errors='coerce').sum()
+        for (linha, cor), grupo in df.groupby([col_linha, col_cor]):
+            serie = grupo.groupby('ano_mes')[col_qtd].sum().sort_index()
+            serie = serie.asfreq('MS').fillna(0)
 
-        registro = {
-            'linha_otb': linha_otb,
-            'cor_produto': cor_produto,
-            'estoque_atual': estoque_atual
-        }
+            prev = forecast_serie(serie, passos=periodos_forecast)
+            g = trend_uplift.get(linha, 0)
+            prev_adj = prev * (1 + g)
 
-        for dt_prev, val in prev_adj.items():
-            registro[f'venda_prevista_{dt_prev.strftime("%Y_%m")}'] = round(val, 0)
+            estoque_rec = (prev_adj.mean() * 2.8).round()
 
-        registro['estoque_recomendado_total'] = int(estoque_rec)
-        resultado.append(registro)
+            estoque_atual = df_estoque.loc[
+                (df_estoque['linha'] == linha) & (df_estoque['cor'] == cor),
+                'saldo_empresa'
+            ].sum()
 
-    df_resultado = pd.DataFrame(resultado)
+            registro = {
+                col_linha: linha,
+                col_cor: cor,
+                'estoque_atual': estoque_atual
+            }
 
-    # Ordenar colunas para exibição
-    datas_previstas = pd.date_range(df['ano_mes'].max() + relativedelta(months=1), periods=periodos_forecast, freq='MS')
-    meta_cols = ['linha_otb', 'cor_produto', 'estoque_atual'] + [f'venda_prevista_{dt.strftime("%Y_%m")}' for dt in datas_previstas] + ['estoque_recomendado_total']
-    df_resultado = df_resultado[meta_cols]
+            for dt_prev, val in prev_adj.items():
+                col = f'venda_prevista_{dt_prev.strftime("%Y_%m")}'
+                registro[col] = round(val, 0)
 
-    st.success("Previsão gerada com sucesso!")
-    st.dataframe(df_resultado)
+            registro['estoque_recomendado_total'] = int(estoque_rec)
+            resultado.append(registro)
 
-    st.subheader("📊 Gráfico de Previsão de Vendas")
-    linha_filtrada = st.selectbox("Selecione a linha do produto:", df_resultado['linha_otb'].unique())
-    df_grafico = df_resultado[df_resultado['linha_otb'] == linha_filtrada].melt(
-        id_vars=['linha_otb', 'cor_produto'],
-        value_vars=[f'venda_prevista_{dt.strftime("%Y_%m")}' for dt in datas_previstas],
-        var_name='mês',
-        value_name='vendas_previstas'
-    )
-    fig = px.bar(df_grafico, x='mês', y='vendas_previstas', color='cor_produto', barmode='group',
-                 labels={'mês': 'Mês', 'vendas_previstas': 'Vendas Previstas'},
-                 title=f"Previsão de Vendas para {linha_filtrada}")
-    st.plotly_chart(fig)
+        df_resultado = pd.DataFrame(resultado)
 
-    # Botão para download do Excel
-    output = BytesIO()
-    df_resultado.to_excel(output, index=False)
-    output.seek(0)
-    st.download_button(
-        label="📅 Baixar resultados em Excel",
-        data=output,
-        file_name="forecast_sugestao_compras.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # Ordenar colunas para exportação e visualização
+        meta_cols = [col_linha, col_cor, 'estoque_atual']
+        for dt in datas_previstas:
+            meta_cols.append(f'venda_prevista_{dt.strftime("%Y_%m")}')
+        meta_cols.append('estoque_recomendado_total')
+
+        df_resultado = df_resultado[meta_cols]
+
+        st.success("Previsão gerada com sucesso!")
+        st.dataframe(df_resultado)
+
+        # Gráfico com multiseleção e facet por linha_otb
+        st.subheader("📊 Gráfico de Previsão de Vendas")
+
+        linhas_selecionadas = st.multiselect(
+            "Selecione uma ou mais linhas do produto:",
+            options=df_resultado[col_linha].unique(),
+            default=df_resultado[col_linha].unique()[:1]
+        )
+
+        if linhas_selecionadas:
+            df_grafico = df_resultado[df_resultado[col_linha].isin(linhas_selecionadas)].melt(
+                id_vars=[col_linha, col_cor],
+                value_vars=[c for c in df_resultado.columns if c.startswith('venda_prevista_')],
+                var_name='mês',
+                value_name='vendas_previstas'
+            )
+            # Ordenar eixo X cronologicamente
+            df_grafico['mês_ordenado'] = pd.to_datetime(df_grafico['mês'].str.replace('venda_prevista_', '') + '01', format='%Y_%m%d')
+            df_grafico = df_grafico.sort_values('mês_ordenado')
+
+            fig = px.bar(
+                df_grafico,
+                x='mês',
+                y='vendas_previstas',
+                color=col_cor,
+                barmode='group',
+                facet_col=col_linha,
+                category_orders={'mês': sorted(df_grafico['mês'].unique())},
+                labels={'mês': 'Mês', 'vendas_previstas': 'Vendas Previstas', col_cor: 'Cor do Produto'},
+                title="Previsão de Vendas por Linha OTB e Cor do Produto"
+            )
+            fig.update_xaxes(tickangle=45, tickmode='array')
+
+            st.plotly_chart(fig)
+        else:
+            st.info("Selecione ao menos uma linha do produto para visualizar o gráfico.")
+
+        # Download do Excel
+        output = BytesIO()
+        df_resultado.to_excel(output, index=False)
+        output.seek(0)
+        st.download_button(
+            label="📅 Baixar resultados em Excel",
+            data=output,
+            file_name="forecast_sugestao_compras.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
