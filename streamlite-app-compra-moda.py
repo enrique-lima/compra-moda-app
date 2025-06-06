@@ -11,7 +11,7 @@ from pytrends.request import TrendReq
 # ────────────────────────────────────────────────────────────────────────────────
 # Configurações Visuais e Logo via link web
 # ────────────────────────────────────────────────────────────────────────────────
-st.image("https://drive.google.com/file/d/1O95hKzOaU3uq5deo2Tk2KGLOberGkiHj/view?usp=drive_link", width=150)
+st.image("https://seusite.com/logo.png", width=150)
 
 st.markdown(
     """
@@ -114,6 +114,10 @@ if uploaded_file:
     df_venda = df_venda.dropna(subset=["ano_venda", "mes_num"])
     df_venda["ano_mes"] = pd.to_datetime(df_venda["ano_venda"].astype(int).astype(str)+"-"+df_venda["mes_num"].astype(int).astype(str)+"-01")
 
+    # Controle de influência do Google Trends
+    st.sidebar.subheader("⚙️ Ajustes de Forecast")
+    peso_google_trends = st.sidebar.slider("Peso do ajuste Google Trends (%)", min_value=0, max_value=100, value=100, step=5) / 100
+
     # Google Trends uplift
     st.info("Consultando Google Trends… aguarde ~1 minuto se houver muitas linhas.")
     trend_uplift = get_trend_uplift(df_venda["linha_otb"].dropna().unique().tolist())
@@ -126,7 +130,8 @@ if uploaded_file:
     for (linha, cor), grupo in df_venda.groupby(["linha_otb", "cor_produto"]):
         serie = grupo.groupby("ano_mes")["qtd_vendida"].sum().sort_index().asfreq("MS", fill_value=0)
         prev = forecast_serie(serie, passos=periodos)
-        prev_adj = prev * (1 + trend_uplift.get(linha, 0))
+        ajuste = trend_uplift.get(linha, 0) * peso_google_trends
+        prev_adj = prev * (1 + ajuste)
         estoque_rec = (prev_adj.mean() * 2.8).round()
 
         estoque_atual = df_estoque.loc[(df_estoque["linha"]==linha)&(df_estoque["cor"]==cor), "saldo_empresa"].sum()
