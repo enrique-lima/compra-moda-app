@@ -6,17 +6,13 @@ import unicodedata, time
 from dateutil.relativedelta import relativedelta
 from statsmodels.tsa.api import ExponentialSmoothing
 from pytrends.request import TrendReq
-from PIL import Image
-import requests
-from io import BytesIO
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Carregando logo direto do repositório GitHub
+# Configurações Visuais e Logo local
 # ────────────────────────────────────────────────────────────────────────────────
-url_logo = "https://raw.githubusercontent.com/enrique-lima/compra-moda-app/9ac980086bec03f84b0546d558f0ef55245193af/LOGO_TL.png"
-response = requests.get(url_logo)
-logo = Image.open(BytesIO(response.content))
-st.image(logo, width=150)
+from PIL import Image
+logo_path = "LOGO_TL.png"
+st.image(logo_path, width=150)
 
 st.markdown(
     """
@@ -33,7 +29,7 @@ st.markdown(
 st.title("Previsão de Vendas e Reposição de Estoque")
 st.write(
     """
-    Este app gera previsão de vendas por **linha OTB** e **cor de produto** para os próximos **6 meses**, 
+    Este app gera previsão de vendas por **linha OTB**, **cor de produto** e **filial** para os próximos **6 meses**, 
     ajustada pela tendência de buscas do Google Trends, além da recomendação de estoque.
 
     📂 Faça upload de um arquivo Excel com as abas **VENDA** e **ESTOQUE**.
@@ -51,9 +47,8 @@ def normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
     ]
     return df
 
-
 def get_trend_uplift(linhas_otb: list[str]) -> dict[str, float]:
-    """Calcula o uplift percentual médio das linhas usando Google Trends."""
+    """Calcula o uplift percentual médio das linhas usando Google Trends."""
     pytrends = TrendReq(hl="pt-BR", tz=360)
     genericos = [
         "acessorios","alpargata","anabela","mocassim","bolsa","bota","cinto","loafer","rasteira",
@@ -78,10 +73,12 @@ def get_trend_uplift(linhas_otb: list[str]) -> dict[str, float]:
         time.sleep(1)  # evita bloqueio
     return tendencias
 
-
 def forecast_serie(serie: pd.Series, passos: int = 6) -> pd.Series:
-    """Forecast simples com Exponential Smoothing ou média, se poucos dados."""
-    if serie.count() >= 6:
+    """Forecast com Exponential Smoothing considerando sazonalidade mensal (12 meses)."""
+    if serie.count() >= 12:
+        modelo = ExponentialSmoothing(serie, trend="add", seasonal="add", seasonal_periods=12)
+        prev = modelo.fit().forecast(passos)
+    elif serie.count() >= 6:
         modelo = ExponentialSmoothing(serie, trend="add", seasonal=None)
         prev = modelo.fit().forecast(passos)
     else:
@@ -97,18 +94,19 @@ def forecast_serie(serie: pd.Series, passos: int = 6) -> pd.Series:
 uploaded_file = st.file_uploader("📂 Faça upload do arquivo Excel", type=["xlsx"])
 
 if uploaded_file:
-    # Carregar planilhas
     xls = pd.ExcelFile(uploaded_file)
     df_venda = normalizar_colunas(xls.parse("VENDA"))
     df_estoque = normalizar_colunas(xls.parse("ESTOQUE"))
 
-    # Validação de colunas essenciais
+    # Validação colunas obrigatórias
     required_venda = ["linha_otb", "cor_produto", "qtd_vendida", "ano_venda", "mes_venda", "filial"]
-    required_estoque = ["linha", "cor", "saldo_empresa"]
+    required_estoque = ["linha", "cor", "filial", "saldo_empresa"]
     if missing := [c for c in required_venda if c not in df_venda.columns]:
-        st.error(f"Faltam colunas na aba VENDA: {', '.join(missing)}"); st.stop()
+        st.error(f"Faltam colunas na aba VENDA: {', '.join(missing)}")
+        st.stop()
     if missing := [c for c in required_estoque if c not in df_estoque.columns]:
-        st.error(f"Faltam colunas na aba ESTOQUE: {', '.join(missing)}"); st.stop()
+        st.error(f"Faltam colunas na aba ESTOQUE: {', '.join(missing)}")
+        st.stop()
 
     # Preparar datas
     meses = {
@@ -117,14 +115,13 @@ if uploaded_file:
     }
     df_venda["mes_num"] = df_venda["mes_venda"].str.lower().map(meses)
     df_venda = df_venda.dropna(subset=["ano_venda", "mes_num"])
-    df_venda["ano_mes"] = pd.to_datetime(df_venda["ano_venda"].astype(int).astype(str)+"-"+df_venda["mes_num"].astype(int).astype(str)+"-01")
+    df_venda["ano_mes"] = pd.to_datetime(df_venda["ano_venda"].astype(int).astype(str) + "-" + df_venda["mes_num"].astype(int).astype(str) + "-01")
 
-    # Controle de influência do Google Trends
+    # Controle peso Google Trends
     st.sidebar.subheader("⚙️ Ajustes de Forecast")
-    peso_google_trends = st.sidebar.slider("Peso do ajuste Google Trends (%)", min_value=0, max_value=100, value=100, step=5) / 100
+    peso_google_trends = st.sidebar.slider("Peso do ajuste Google Trends (%)", 0, 100, 100, 5) / 100
 
-    # Google Trends uplift
-    st.info("Consultando Google Trends… aguarde ~1 minuto se houver muitas linhas.")
+    st.info("Consultando Google Trends… aguarde ~1 minuto se houver muitas linhas.")
     trend_uplift = get_trend_uplift(df_venda["linha_otb"].dropna().unique().tolist())
 
     # Forecast
@@ -138,24 +135,45 @@ if uploaded_file:
         ajuste = trend_uplift.get(linha, 0) * peso_google_trends
         prev_adj = (prev * (1 + ajuste)).clip(lower=0)
 
-        estoque_atual = df_estoque.loc[(df_estoque["linha"] == linha) & (df_estoque["cor"] == cor), "saldo_empresa"].sum()
+        estoque_atual = df_estoque.loc[
+            (df_estoque["linha"] == linha) &
+            (df_estoque["cor"] == cor) &
+            (df_estoque["filial"] == filial),
+            "saldo_empresa"
+        ].sum()
 
-        registro = {"linha_otb": linha, "cor_produto": cor, "filial": filial, "estoque_atual": estoque_atual}
+        estoque_mensal = []
+        cobertura_meses = 2.8
+        for i in range(periodos):
+            # Estoque esperado considerando venda prevista acumulada até mês i
+            estoque_esperado = estoque_atual + estoque_mensal[-1] if i > 0 else estoque_atual
+            # Estoque recomendado mensalmente com base na previsão daquele mês multiplicado pela cobertura
+            estoque_esperado = estoque_esperado + prev_adj.iloc[i] * cobertura_meses
+            estoque_mensal.append(round(estoque_esperado, 0))
+
+        registro = {
+            "linha_otb": linha,
+            "cor_produto": cor,
+            "filial": filial,
+            "estoque_atual": estoque_atual,
+        }
         for dt, val in prev_adj.items():
             registro[f"venda_prevista_{dt.strftime('%Y_%m')}"] = round(val, 0)
-            registro[f"estoque_recomendado_{dt.strftime('%Y_%m')}"] = round(val * 2.8, 0)  # estoque ideal para o mês
+        for i, dt in enumerate(datas_prev):
+            registro[f"estoque_esperado_{dt.strftime('%Y_%m')}"] = estoque_mensal[i]
 
-        registro["estoque_recomendado_total"] = int((prev_adj.mean() * 2.8).round())
-
+        registro["estoque_recomendado_total"] = int((prev_adj.mean() * cobertura_meses).round())
         resultado.append(registro)
 
     df_resultado = pd.DataFrame(resultado)
 
     # Organizar colunas
-    colunas = ["linha_otb", "cor_produto", "filial", "estoque_atual"] + \
-              [f"venda_prevista_{d.strftime('%Y_%m')}" for d in datas_prev] + \
-              [f"estoque_recomendado_{d.strftime('%Y_%m')}" for d in datas_prev] + \
-              ["estoque_recomendado_total"]
+    colunas = (
+        ["linha_otb", "cor_produto", "filial", "estoque_atual"] +
+        [f"venda_prevista_{d.strftime('%Y_%m')}" for d in datas_prev] +
+        [f"estoque_esperado_{d.strftime('%Y_%m')}" for d in datas_prev] +
+        ["estoque_recomendado_total"]
+    )
     df_resultado = df_resultado[colunas]
 
     st.success("Previsão gerada com sucesso!")
@@ -176,10 +194,16 @@ if uploaded_file:
         df_plot = df_plot.sort_values("mês_ord")
 
         fig = px.bar(
-            df_plot, x="mês", y="vendas_previstas", color="cor_produto", barmode="stack",
-            facet_col="linha_otb", category_orders={"mês": df_plot["mês"].unique()},
+            df_plot,
+            x="mês",
+            y="vendas_previstas",
+            color="cor_produto",
+            barmode="stack",
+            facet_col="linha_otb",
+            category_orders={"mês": df_plot["mês"].unique()},
             labels={"mês": "Mês", "vendas_previstas": "Vendas Previstas", "cor_produto": "Cor"},
-            title="Previsão de Vendas • Barras Empilhadas por Cor", height=600
+            title="Previsão de Vendas • Barras Empilhadas por Cor",
+            height=600
         )
         fig.update_xaxes(tickangle=45)
         st.plotly_chart(fig, use_container_width=True)
