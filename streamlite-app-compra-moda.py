@@ -76,6 +76,17 @@ st.title("Previsão de Vendas e Reposição de Estoque")
 
 uploaded_file = st.file_uploader("\U0001F4C2 Faça upload do arquivo Excel", type=["xlsx"])
 
+st.markdown(
+    """
+    <a href="https://drive.google.com/uc?export=download&id=1ip_FU9Ah1zjyFhaW6vVUP87I_sosy0r8" target="_blank">
+        <button style="background-color:#004080;color:white;padding:10px 20px;border:none;border-radius:8px;font-weight:bold;">
+            ⬇️ Baixar Template Excel
+        </button>
+    </a>
+    """,
+    unsafe_allow_html=True
+)
+
 if uploaded_file:
     with st.spinner("Carregando dados e normalizando..."):
         df_venda, df_estoque = carregar_dados(uploaded_file)
