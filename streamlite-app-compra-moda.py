@@ -27,7 +27,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # === Título e descrição ===
-st.image("LOGO TL.png", width=150)
+st.image("LOGO_TL.png", width=150)
 st.title("Previsão de Vendas e Reposição de Estoque")
 st.write("""
 Este app permite fazer previsão de vendas por linha OTB e cor de produto, com sugestão de estoque com base na tendência do Google Trends e histórico de vendas.
