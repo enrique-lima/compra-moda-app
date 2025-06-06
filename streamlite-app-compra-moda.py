@@ -15,7 +15,7 @@ from io import BytesIO as IOBytes
 LOGO_URL = "https://raw.githubusercontent.com/enrique-lima/compra-moda-app/9ac980086bec03f84b0546d558f0ef55245193af/LOGO_TL.png"
 response = requests.get(LOGO_URL)
 img_logo = Image.open(IOBytes(response.content))
-st.image(img_logo, width=150)
+st.image(img_logo, width=300)
 
 st.markdown(
     """
