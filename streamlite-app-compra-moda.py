@@ -136,7 +136,7 @@ if uploaded_file:
         if cobertura > 2.8:
             recomendacao = "Acelerar venda"
         else:
-            recomendacao = "Comprar urgentemente"
+            recomendacao = "Necessidade de recompra"
 
         registro = {
             "linha_otb": linha,
