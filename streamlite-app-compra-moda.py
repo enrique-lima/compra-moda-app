@@ -12,7 +12,7 @@ from pytrends.request import TrendReq
 # ──────────────────────────────
 from PIL import Image
 logo = Image.open("LOGO_TL.png")
-st.image(logo, width=150)
+st.image(logo, width=300)
 
 st.markdown(
     """
