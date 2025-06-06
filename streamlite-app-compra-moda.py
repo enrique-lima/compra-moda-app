@@ -90,7 +90,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-f uploaded_file:
+if uploaded_file:
     progresso = st.progress(0)
     status_text = st.empty()
 
