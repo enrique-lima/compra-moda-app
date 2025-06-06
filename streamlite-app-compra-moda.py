@@ -14,7 +14,7 @@ from PIL import Image
 
 try:
     logo = Image.open("LOGO_TL.png")
-    st.image(logo, width=150)
+    st.image(logo, width=300)
 except Exception as e:
     st.error(f"Erro ao carregar logo: {e}")
 
