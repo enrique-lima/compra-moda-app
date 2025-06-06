@@ -148,10 +148,10 @@ if uploaded_file:
         estoque_rec = (prev_adj * 2.8).round()
 
         estoque_atual = df_estoque.loc[
-            (df_estoque["linha"] == linha) &
-            (df_estoque["cor"] == cor) &
-            (df_estoque["filial"] == filial),
-            "qtd_estoque"
+        (df_estoque["linha"] == linha) &
+        (df_estoque["cor"] == cor) &
+        (df_estoque["filial"] == filial),
+        "saldo_empresa"
         ].sum()
 
         compra_sugerida = (estoque_rec.sum() - estoque_atual).clip(lower=0)
