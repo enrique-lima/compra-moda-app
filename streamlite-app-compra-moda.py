@@ -77,8 +77,6 @@ st.markdown("""
 Este app realiza forecast de vendas e recomendações de compra para a Tatiana Loureiro, com análise por Filial, Linha OTB e Cor. Utiliza dados históricos, estoque e tendências de mercado (Google Trends) para prever os próximos 6 meses e apoiar decisões estratégicas.
 """)
 
-)
-
 uploaded_file = st.file_uploader("\U0001F4C2 Faça upload do arquivo Excel", type=["xlsx"])
 
 st.markdown(
