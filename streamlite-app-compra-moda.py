@@ -73,6 +73,7 @@ def forecast_serie_cache(serie_values: tuple, serie_index: tuple, passos: int, s
 # --- App ---
 st.image("https://raw.githubusercontent.com/enrique-lima/compra-moda-app/main/LOGO_TL.png", width=300)
 st.title("Previsão de Vendas e Reposição de Estoque")
+st.subheader("Forecast de venda e recomendação de compra para os próximos 6 meses, a nível Filial, Linha OTB e Cor")
 
 uploaded_file = st.file_uploader("\U0001F4C2 Faça upload do arquivo Excel", type=["xlsx"])
 
