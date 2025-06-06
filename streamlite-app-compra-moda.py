@@ -181,6 +181,23 @@ if uploaded_file:
     df_resultado = df_resultado[colunas_fixas + colunas_prev_estoque]
 
     st.success("Previsão gerada com sucesso!")
+    # Pré-visualização do Excel gerado
+    st.subheader("📋 Pré-visualização do Resultado")
+    st.dataframe(df_resultado.head(50), use_container_width=True)
+
+    # Exportar Excel para download
+     output = BytesIO()
+     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    df_resultado.to_excel(writer, index=False, sheet_name='Resumo_Previsao')
+    output.seek(0)
+
+    st.download_button(
+    label="📥 Baixar Excel com Previsões",
+    data=output,
+    file_name="previsao_estoque.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
 
     # Filtro multiselect acima do gráfico com limite opcional (exemplo max 10)
     linhas_otb_disponiveis = df_resultado["linha_otb"].unique()
