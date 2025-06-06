@@ -138,11 +138,44 @@ if uploaded_file:
 
     for (linha, cor, filial), grupo in df_venda.groupby(["linha_otb", "cor_produto", "filial"]):
         grupo_sorted = grupo.sort_values("ano_mes")
-        serie_values = tuple(grupo_sorted.groupby("ano_mes")["qtd_vendida"].sum().sort_index().asfreq("MS", fill_value=0).values)
-        serie_index = tuple(grupo_sorted.groupby("ano_mes")["qtd_vendida"].sum().sort_index().asfreq("MS", fill_value=0).index)
+        serie = grupo_sorted.groupby("ano_mes")["qtd_vendida"].sum().sort_index().asfreq("MS", fill_value=0)
+        serie_values = tuple(serie.values)
+        serie_index = tuple(serie.index)
 
         prev = forecast_serie_cache(serie_values, serie_index, passos=periodos, sazonalidade=usar_sazonalidade)
         ajuste = trend_uplift.get(linha, 0) * peso_google_trends
         prev_adj = (prev * (1 + ajuste)).clip(lower=0)
         estoque_rec = (prev_adj * 2.8).round()
-        estoque_atual = df_estoque.loc[(df_estoque["linha"] == linha) & (df_estoque["cor"] == cor) & (df_estoque
+
+        estoque_atual = df_estoque.loc[
+            (df_estoque["linha"] == linha) &
+            (df_estoque["cor"] == cor) &
+            (df_estoque["filial"] == filial),
+            "qtd_estoque"
+        ].sum()
+
+        compra_sugerida = (estoque_rec.sum() - estoque_atual).clip(lower=0)
+
+        resultado.append({
+            "linha_otb": linha,
+            "cor_produto": cor,
+            "filial": filial,
+            "previsao_total": int(prev_adj.sum()),
+            "estoque_recomendado": int(estoque_rec.sum()),
+            "estoque_atual": int(estoque_atual),
+            "compra_sugerida": int(compra_sugerida)
+        })
+
+    df_resultado = pd.DataFrame(resultado)
+    st.success("Previsão gerada com sucesso!")
+    st.dataframe(df_resultado)
+
+    st.markdown("### Análise de Tendência por Linha OTB")
+    st.dataframe(df_trends_raw)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df_trends_raw["linha_otb"], y=df_trends_raw["score_linha"], name="Linha"))
+    fig.add_trace(go.Bar(x=df_trends_raw["linha_otb"], y=df_trends_raw["score_generico"], name="Genérico"))
+    fig.add_trace(go.Bar(x=df_trends_raw["linha_otb"], y=df_trends_raw["score_concorrente"], name="Concorrente"))
+    fig.update_layout(barmode="group", title="Comparativo de Tendências - Google Trends")
+    st.plotly_chart(fig, use_container_width=True)
