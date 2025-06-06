@@ -159,8 +159,9 @@ if uploaded_file:
     st.dataframe(df_resultado)
 
 # --- FILTRO MULTISELETOR PARA LINHA OTB ---
+# Filtro multiseletor de Linha OTB acima do gráfico
 linhas_otb_disponiveis = df_resultado["linha_otb"].unique()
-linhas_otb_selecionadas = st.sidebar.multiselect(
+linhas_otb_selecionadas = st.multiselect(
     "Selecione as linhas OTB para visualizar no gráfico",
     options=linhas_otb_disponiveis,
     default=linhas_otb_disponiveis.tolist()
@@ -170,21 +171,16 @@ linhas_otb_selecionadas = st.sidebar.multiselect(
 df_filtrado = df_resultado[df_resultado["linha_otb"].isin(linhas_otb_selecionadas)]
 
 # Preparar dados para o gráfico combinado
-# Somar vendas previstas e estoque recomendado por linha_otb
 venda_cols = [c for c in df_filtrado.columns if c.startswith("venda_prevista_")]
 estoque_cols = [c for c in df_filtrado.columns if c.startswith("estoque_recomendado_")]
 
 df_graf = df_filtrado.groupby("linha_otb")[venda_cols + estoque_cols].sum()
 
-# Totalizar vendas previstas e estoque recomendado dos 6 meses para cada linha_otb
 df_graf["total_venda_prevista"] = df_graf[venda_cols].sum(axis=1)
 df_graf["total_estoque_recomendado"] = df_graf[estoque_cols].sum(axis=1)
 
-import plotly.graph_objects as go
-
 fig = go.Figure()
 
-# Adiciona barras (estoque recomendado)
 fig.add_trace(go.Bar(
     x=df_graf.index,
     y=df_graf["total_estoque_recomendado"],
@@ -193,7 +189,6 @@ fig.add_trace(go.Bar(
     yaxis="y1",
 ))
 
-# Adiciona linha (venda prevista)
 fig.add_trace(go.Scatter(
     x=df_graf.index,
     y=df_graf["total_venda_prevista"],
@@ -225,4 +220,5 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
 
