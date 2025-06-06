@@ -145,67 +145,29 @@ if uploaded_file:
 
     df_resultado = pd.DataFrame(resultado)
 
-    # Colunas organizadas
-    colunas = ["linha_otb", "cor_produto", "filial", "estoque_atual", "cobertura_estoque_meses", "recomendacao"] + \
-              [c for c in df_resultado.columns if c.startswith("venda_prevista_")] + \
-              [c for c in df_resultado.columns if c.startswith("estoque_recomendado_")]
-    df_resultado = df_resultado[colunas]
+    # --- FILTRANDO APENAS OS 6 MESES FUTUROS NO OUTPUT FINAL ---
+    colunas_prev_estoque = []
+    for dt in datas_prev:
+        colunas_prev_estoque.append(f"venda_prevista_{dt.strftime('%Y_%m')}")
+        colunas_prev_estoque.append(f"estoque_recomendado_{dt.strftime('%Y_%m')}")
+
+    colunas_fixas = ["linha_otb", "cor_produto", "filial", "estoque_atual", "cobertura_estoque_meses", "recomendacao"]
+
+    df_resultado = df_resultado[colunas_fixas + colunas_prev_estoque]
 
     st.success("Previsão gerada com sucesso!")
     st.dataframe(df_resultado)
 
-    # --- FILTRO MULTISELEÇÃO PARA LINHA_OTB ---
-    linhas_disponiveis = df_resultado["linha_otb"].unique()
-    linhas_selecionadas = st.multiselect(
-        "Selecione as linhas OTB para o gráfico:",
-        options=linhas_disponiveis,
-        default=linhas_disponiveis.tolist()
-    )
-
-    # Filtra dados para o gráfico conforme seleção
-    df_graf_filtrado = df_resultado[df_resultado["linha_otb"].isin(linhas_selecionadas)]
-
     # Gráfico combinado por linha_otb (agregando filiais e cores)
-    df_graf = df_graf_filtrado.groupby("linha_otb").sum(numeric_only=True).reset_index()
-    df_graf_vendas = df_graf[[c for c in df_graf.columns if c.startswith("venda_prevista_")]]
-    df_graf_estoque = df_graf[[c for c in df_graf.columns if c.startswith("estoque_recomendado_")]]
-    meses_graf = [pd.to_datetime(c.replace("venda_prevista_", "") + "_01", format="%Y_%m_%d") for c in df_graf_vendas.columns]
+    df_graf = df_resultado.groupby("linha_otb").sum(numeric_only=True).reset_index()
+    df_graf["total_venda_prevista"] = df_graf[[c for c in df_graf.columns if c.startswith("venda_prevista_")]].sum(axis=1)
 
     fig = go.Figure()
-
-    for i, linha in enumerate(df_graf["linha_otb"]):
-        fig.add_trace(go.Bar(
-            x=meses_graf,
-            y=df_graf_estoque.iloc[i].values,
-            name=f"Estoque Recomendado - {linha}",
-            opacity=0.6,
-            offsetgroup=i
-        ))
-        fig.add_trace(go.Scatter(
-            x=meses_graf,
-            y=df_graf_vendas.iloc[i].values,
-            mode="lines+markers",
-            name=f"Venda Prevista - {linha}"
-        ))
-
-    fig.update_layout(
-        title="Previsão de Vendas e Estoque Recomendado por Linha OTB",
-        xaxis_title="Mês",
-        yaxis_title="Quantidade",
-        barmode="group",
-        legend_title_text="Legenda",
-        height=600
-    )
-
+    fig.add_trace(go.Bar(
+        x=df_graf["linha_otb"],
+        y=df_graf["total_venda_prevista"],
+        name="Venda Prevista 6 meses",
+        marker_color="#004080",
+    ))
+    fig.update_layout(title="Venda Prevista por Linha OTB (6 meses futuros)", xaxis_title="Linha OTB", yaxis_title="Quantidade")
     st.plotly_chart(fig, use_container_width=True)
-
-    # Download do Excel
-    buffer = BytesIO()
-    df_resultado.to_excel(buffer, index=False)
-    buffer.seek(0)
-    st.download_button(
-        "📅 Baixar Excel de Resultados",
-        data=buffer,
-        file_name="forecast_sugestao_compras.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
