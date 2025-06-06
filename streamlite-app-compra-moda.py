@@ -7,8 +7,8 @@ import os
 
 # Tente abrir a imagem do logo de forma segura
 logo_path = "LOGO_TL.png"
-if os.path.exists(logo_path):
-    logo_image = Image.open(logo_path)
+if os.path.exists(LOGO_TL):
+    logo_image = Image.open(LOGO_TL)
     st.image(logo_image, width=150)
 else:
     st.warning("Logo não encontrado. Por favor, confirme se o arquivo LOGO_TL.png está na pasta do app.")
