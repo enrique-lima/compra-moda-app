@@ -11,7 +11,8 @@ from pytrends.request import TrendReq
 # ────────────────────────────────────────────────────────────────────────────────
 # Configurações Visuais e Logo via link web
 # ────────────────────────────────────────────────────────────────────────────────
-st.image("https://seusite.com/logo.png", width=150)
+st.image("https://raw.githubusercontent.com/enrique-lima/compra-moda-app/9ac980086bec03f84b0546d558f0ef55245193af/LOGO_TL.png", width=150)
+
 
 st.markdown(
     """
