@@ -8,3 +8,10 @@ pandas
 openpyxl
 plotly
 streamlit
+pandas
+streamlit
+plotly
+statsmodels
+xlsxwriter
+pytrends
+python-dateutil
