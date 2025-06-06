@@ -181,31 +181,14 @@ if uploaded_file:
     df_resultado = df_resultado[colunas_fixas + colunas_prev_estoque]
 
     st.success("Previsão gerada com sucesso!")
-    # Pré-visualização do Excel gerado
-    st.subheader("📋 Pré-visualização do Resultado")
-    st.dataframe(df_resultado.head(50), use_container_width=True)
-
-    # Exportar Excel para download
-     output = BytesIO()
-     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-    df_resultado.to_excel(writer, index=False, sheet_name='Resumo_Previsao')
-    output.seek(0)
-
-    st.download_button(
-    label="📥 Baixar Excel com Previsões",
-    data=output,
-    file_name="previsao_estoque.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-
+   
     # Filtro multiselect acima do gráfico com limite opcional (exemplo max 10)
     linhas_otb_disponiveis = df_resultado["linha_otb"].unique()
     linhas_otb_selecionadas = st.multiselect(
-        "Selecione as linhas OTB para visualizar no gráfico (máx 10)",
+        "Selecione as linhas OTB para visualizar no gráfico (máx 1)",
         options=df_resultado["linha_otb"].unique(),
-        default=df_resultado["linha_otb"].unique()[:10],  # garante até 10 selecionados por padrão
-        max_selections=10,
+        default=df_resultado["linha_otb"].unique()[:1],  # garante até 10 selecionados por padrão
+        max_selections=1,
     )
 
     df_filtrado = df_resultado[df_resultado["linha_otb"].isin(linhas_otb_selecionadas)]
@@ -266,3 +249,20 @@ if uploaded_file:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+ # Pré-visualização do Excel gerado
+    st.subheader("📋 Pré-visualização do Resultado")
+    st.dataframe(df_resultado.head(50), use_container_width=True)
+
+    # Exportar Excel para download
+     output = BytesIO()
+     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    df_resultado.to_excel(writer, index=False, sheet_name='Resumo_Previsao')
+    output.seek(0)
+
+    st.download_button(
+    label="📥 Baixar Excel com Previsões",
+    data=output,
+    file_name="previsao_estoque.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
